@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -14,9 +13,10 @@ import { supabase } from '@/integrations/supabase/client';
 interface CompanyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCompanyAdded?: () => void;
 }
 
-export const CompanyDialog = ({ open, onOpenChange }: CompanyDialogProps) => {
+export const CompanyDialog = ({ open, onOpenChange, onCompanyAdded }: CompanyDialogProps) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -71,6 +71,10 @@ export const CompanyDialog = ({ open, onOpenChange }: CompanyDialogProps) => {
           mobile_service: false,
           price_range: '€€'
         });
+        // Call the callback to refresh the companies list
+        if (onCompanyAdded) {
+          onCompanyAdded();
+        }
       }
     } catch (error) {
       toast({
