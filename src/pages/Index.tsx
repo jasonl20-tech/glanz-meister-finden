@@ -40,6 +40,7 @@ const Index = () => {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [loading, setLoading] = useState(false);
   const { user, signOut } = useAuth();
 
   useEffect(() => {
@@ -51,23 +52,36 @@ const Index = () => {
   }, [companies, searchTerm, sortBy]);
 
   const fetchCompanies = async () => {
-    const { data, error } = await supabase
-      .from('companies')
-      .select('*');
-    
-    if (data && !error) {
-      setCompanies(data);
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*');
+      
+      if (error) {
+        console.error('Error fetching companies:', error);
+        return;
+      }
+
+      if (data) {
+        setCompanies(data);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const filterAndSortCompanies = () => {
     let filtered = companies;
 
-    if (searchTerm) {
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
       filtered = companies.filter(company => 
-        company.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        company.postal_code.includes(searchTerm) ||
-        company.name.toLowerCase().includes(searchTerm.toLowerCase())
+        company.city.toLowerCase().includes(searchLower) ||
+        company.postal_code.includes(searchTerm.trim()) ||
+        company.name.toLowerCase().includes(searchLower)
       );
     }
 
@@ -75,11 +89,15 @@ const Index = () => {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'rating':
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         case 'price_low':
-          return a.price_range.length - b.price_range.length;
+          const aPriceLength = a.price_range?.length || 0;
+          const bPriceLength = b.price_range?.length || 0;
+          return aPriceLength - bPriceLength;
         case 'price_high':
-          return b.price_range.length - a.price_range.length;
+          const aPriceLengthHigh = a.price_range?.length || 0;
+          const bPriceLengthHigh = b.price_range?.length || 0;
+          return bPriceLengthHigh - aPriceLengthHigh;
         case 'distance':
         default:
           return a.name.localeCompare(b.name);
@@ -87,6 +105,15 @@ const Index = () => {
     });
 
     setFilteredCompanies(filtered);
+  };
+
+  const handleSearch = () => {
+    // Search is already handled by useEffect, but we can trigger it manually if needed
+    filterAndSortCompanies();
+  };
+
+  const handleCityClick = (city: string) => {
+    setSearchTerm(city);
   };
 
   const openAuthDialog = (mode: 'login' | 'signup') => {
@@ -98,7 +125,7 @@ const Index = () => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star 
         key={i} 
-        className={`w-4 h-4 ${i < Math.floor(rating) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} 
+        className={`w-4 h-4 ${i < Math.floor(rating || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} 
       />
     ));
   };
@@ -157,7 +184,7 @@ const Index = () => {
             <span className="block">Plattform</span>
           </h2>
           <p className="text-xl mb-8 text-blue-100 max-w-3xl mx-auto">
-            Finden Sie den perfekten Aufbereiter in Ihrer Nähe. Über 1.000 geprüfte Betriebe, 
+            Finden Sie den perfekten Aufbereiter in Ihrer Nähe. Über {companies.length} geprüfte Betriebe, 
             faire Preise und echte Bewertungen helfen Ihnen bei der Auswahl.
           </p>
           
@@ -171,11 +198,16 @@ const Index = () => {
                   className="pl-12 h-14 text-lg border-0 shadow-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 />
               </div>
-              <Button className="h-14 px-8 bg-blue-600 hover:bg-blue-700 text-lg font-semibold">
+              <Button 
+                className="h-14 px-8 bg-blue-600 hover:bg-blue-700 text-lg font-semibold"
+                onClick={handleSearch}
+                disabled={loading}
+              >
                 <Search className="w-5 h-5 mr-2" />
-                Suchen
+                {loading ? 'Suche...' : 'Suchen'}
               </Button>
             </div>
             
@@ -186,7 +218,7 @@ const Index = () => {
                 {popularCities.map(city => (
                   <button
                     key={city}
-                    onClick={() => setSearchTerm(city)}
+                    onClick={() => handleCityClick(city)}
                     className="px-3 py-1 text-sm bg-gray-100 hover:bg-blue-50 text-gray-700 rounded-full transition-colors"
                   >
                     {city}
@@ -265,7 +297,9 @@ const Index = () => {
                 <Filter className="w-4 h-4 mr-2" />
                 Filter
               </Button>
-              <span className="text-gray-600">{filteredCompanies.length} Aufbereiter gefunden</span>
+              <span className="text-gray-600">
+                {filteredCompanies.length} Aufbereiter {searchTerm ? `in "${searchTerm}"` : ''} gefunden
+              </span>
             </div>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
@@ -280,57 +314,67 @@ const Index = () => {
             </Select>
           </div>
 
-          {/* Company List */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredCompanies.map(company => (
-              <Card key={company.id} className="hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-lg font-semibold">{company.name}</h3>
-                        {company.verified && (
-                          <Badge className="bg-green-100 text-green-800 text-xs">Verifiziert</Badge>
-                        )}
-                      </div>
-                      <p className="text-gray-600 flex items-center text-sm">
-                        <MapPin className="w-3 h-3 mr-1" />
-                        {company.city} ({company.postal_code})
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center mb-1">
-                        {renderStars(company.rating)}
-                        <span className="ml-1 text-sm font-semibold">{company.rating}</span>
-                      </div>
-                      <p className="text-xs text-gray-600">({company.review_count} Bewertungen)</p>
-                    </div>
-                  </div>
-                  
-                  <p className="text-gray-700 text-sm mb-3 line-clamp-2">{company.description}</p>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-lg font-bold text-blue-600">{company.price_range}</span>
-                      {company.mobile_service && (
-                        <Badge variant="outline" className="text-xs">Mobil</Badge>
-                      )}
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">Details</Button>
-                      <Button size="sm">Anfragen</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {filteredCompanies.length === 0 && searchTerm && (
+          {loading ? (
             <div className="text-center py-12">
-              <p className="text-gray-600 text-lg">Keine Aufbereiter in "{searchTerm}" gefunden.</p>
-              <p className="text-gray-500 mt-2">Versuchen Sie es mit einer anderen Stadt oder PLZ.</p>
+              <p className="text-gray-600 text-lg">Lade Aufbereiter...</p>
             </div>
+          ) : (
+            <>
+              {/* Company List */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                {filteredCompanies.map(company => (
+                  <Card key={company.id} className="hover:shadow-lg transition-shadow">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-lg font-semibold">{company.name}</h3>
+                            {company.verified && (
+                              <Badge className="bg-green-100 text-green-800 text-xs">Verifiziert</Badge>
+                            )}
+                          </div>
+                          <p className="text-gray-600 flex items-center text-sm">
+                            <MapPin className="w-3 h-3 mr-1" />
+                            {company.city} ({company.postal_code})
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-center mb-1">
+                            {renderStars(company.rating || 0)}
+                            <span className="ml-1 text-sm font-semibold">{company.rating || '0.0'}</span>
+                          </div>
+                          <p className="text-xs text-gray-600">({company.review_count || 0} Bewertungen)</p>
+                        </div>
+                      </div>
+                      
+                      {company.description && (
+                        <p className="text-gray-700 text-sm mb-3 line-clamp-2">{company.description}</p>
+                      )}
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-lg font-bold text-blue-600">{company.price_range || '€'}</span>
+                          {company.mobile_service && (
+                            <Badge variant="outline" className="text-xs">Mobil</Badge>
+                          )}
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button size="sm" variant="outline">Details</Button>
+                          <Button size="sm">Anfragen</Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {filteredCompanies.length === 0 && searchTerm && !loading && (
+                <div className="text-center py-12">
+                  <p className="text-gray-600 text-lg">Keine Aufbereiter in "{searchTerm}" gefunden.</p>
+                  <p className="text-gray-500 mt-2">Versuchen Sie es mit einer anderen Stadt oder PLZ.</p>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -412,6 +456,7 @@ const Index = () => {
       <CompanyDialog 
         open={companyDialogOpen} 
         onOpenChange={setCompanyDialogOpen}
+        onCompanyAdded={fetchCompanies}
       />
     </div>
   );
